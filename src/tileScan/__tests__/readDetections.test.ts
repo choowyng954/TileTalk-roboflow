@@ -1,3 +1,4 @@
+import { BONUS_TILES, HAND_TILES } from '../../game/tiles';
 import { readTiles } from '../../scoring/tileHand';
 import { houseRules } from '../../scoring/rulesets/houseRules';
 import { tileCodeForLabel } from '../labels';
@@ -10,35 +11,44 @@ const row = (labels: string[], y = 100, confidence = 0.9, startX = 50): Detectio
   labels.map((label, i) => ({ label, confidence, x: startX + i * (W + 2), y, width: W, height: H }));
 const codes = (tiles: { code: string | null }[]) => tiles.map((t) => t.code);
 
+// The model's 42 classes, as listed on its Roboflow page.
+const MODEL_CLASSES = [
+  ...['B', 'C', 'D'].flatMap((s) => [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `${n}${s}`)),
+  ...['F', 'S'].flatMap((s) => [1, 2, 3, 4].map((n) => `${n}${s}`)),
+  'EW', 'SW', 'WW', 'NW', 'RD', 'GD', 'WD',
+];
+
 describe('tileCodeForLabel', () => {
+  test("every one of the model's classes is a different app tile, and every app tile is covered", () => {
+    const mapped = MODEL_CLASSES.map(tileCodeForLabel);
+    expect(mapped).not.toContain(null);
+    expect(new Set(mapped)).toEqual(new Set([...HAND_TILES, ...BONUS_TILES]));
+    expect(MODEL_CLASSES).toHaveLength(42);
+  });
+
   test('suited tiles: number then B bamboo, C characters, D dots', () => {
     expect(tileCodeForLabel('9D')).toBe('pin9');
     expect(tileCodeForLabel('1C')).toBe('man1');
     expect(tileCodeForLabel('1B')).toBe('sou1');
-    expect(tileCodeForLabel(' 5 b ')).toBe('sou5');
   });
 
   test('flowers and seasons', () => {
     expect(tileCodeForLabel('3F')).toBe('flower3');
     expect(tileCodeForLabel('2S')).toBe('season2');
-    expect(tileCodeForLabel('5F')).toBeNull();
   });
 
-  test('winds and dragons', () => {
+  test('winds end in W, dragons in D', () => {
     expect(tileCodeForLabel('EW')).toBe('east');
-    expect(tileCodeForLabel('north')).toBe('north');
-    expect(tileCodeForLabel('Red Dragon')).toBe('red');
+    expect(tileCodeForLabel('SW')).toBe('south');
+    expect(tileCodeForLabel('WW')).toBe('west');
+    expect(tileCodeForLabel('NW')).toBe('north');
+    expect(tileCodeForLabel('RD')).toBe('red');
+    expect(tileCodeForLabel('GD')).toBe('green');
     expect(tileCodeForLabel('WD')).toBe('white');
   });
 
-  test("the app's own codes", () => {
-    expect(tileCodeForLabel('man5')).toBe('man5');
-    expect(tileCodeForLabel('season4')).toBe('season4');
-  });
-
   test('anything else is unknown, never guessed', () => {
-    // A lone S or W could be a wind or a season/white dragon.
-    for (const label of ['S', 'W', '0B', '10D', 'joker', '']) expect(tileCodeForLabel(label)).toBeNull();
+    for (const label of ['S', 'W', '5F', '0B', '10D', 'joker', '']) expect(tileCodeForLabel(label)).toBeNull();
   });
 });
 

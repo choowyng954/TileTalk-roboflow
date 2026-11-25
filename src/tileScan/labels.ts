@@ -1,46 +1,28 @@
 // TileScan: the tile recognition model's class names, turned into the app's tile codes
 // (see game/tiles.ts).
 //
-// The model is Roboflow's "mahjong-baq4s" (version 83). Its suited tiles are a number and a suit
-// letter: B bamboo, C characters, D dots. Flowers and seasons are a number with F or S.
-// UNCHECKED: the spellings below for winds and dragons are guesses, and flower and season numbers
-// are assumed to match the app's (1 Plum/Spring ... 4 Bamboo/Winter). Check them against the
-// model's class list and correct this file. A label not listed here is shown as unknown in the
-// review, never guessed.
-
-import { BONUS_TILES, HAND_TILES } from '../game/tiles';
+// The model is Roboflow's "mahjong-baq4s" (version 83), with 42 classes:
+// - Suited tiles: 1-9 then B bamboo, C characters or D dots ("9D" is the 9 of dots).
+// - Flowers and seasons: 1-4 then F or S ("2F" is flower 2).
+// - Winds: E, S, W or N then W ("EW" is the East wind).
+// - Dragons: R, G or W then D ("WD" is the White dragon).
+// A label not listed here is shown as unknown in the review, never guessed.
 
 const SUITS: Record<string, string> = { B: 'sou', C: 'man', D: 'pin' };
 const BONUS: Record<string, string> = { F: 'flower', S: 'season' };
-
-/** Winds and dragons, by the label with spaces, dashes and underscores taken out. */
 const HONOURS: Record<string, string> = {
-  EAST: 'east',
-  SOUTH: 'south',
-  WEST: 'west',
-  NORTH: 'north',
   EW: 'east',
   SW: 'south',
   WW: 'west',
   NW: 'north',
-  RED: 'red',
-  GREEN: 'green',
-  WHITE: 'white',
   RD: 'red',
   GD: 'green',
   WD: 'white',
-  REDDRAGON: 'red',
-  GREENDRAGON: 'green',
-  WHITEDRAGON: 'white',
 };
 
 /** The tile code for one of the model's labels, or null when it isn't one the app knows. */
 export function tileCodeForLabel(label: string): string | null {
-  // The app's own codes, e.g. "man1", in case a model ever uses them.
-  const lower = label.trim().toLowerCase();
-  if (HAND_TILES.includes(lower) || BONUS_TILES.includes(lower)) return lower;
-
-  const key = label.toUpperCase().replace(/[\s_-]/g, '');
+  const key = label.trim().toUpperCase();
   const suited = /^([1-9])([BCD])$/.exec(key);
   if (suited) return `${SUITS[suited[2]]}${suited[1]}`;
   const bonus = /^([1-4])([FS])$/.exec(key);

@@ -4,18 +4,30 @@ import { getFirestore, initializeFirestore } from 'firebase/firestore';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Paste the firebaseConfig object from the Firebase console here
-// (Project settings > General > Your apps).
+// The Firebase project's settings come from .env.local, which git ignores, so each copy of the
+// app chooses its own project. Copy .env.example to .env.local and fill it in from the Firebase
+// console (Project settings > General > Your apps). Restart Expo after changing it.
+// Each value must be written out in full (process.env.EXPO_PUBLIC_...) for Expo to fill it in.
 const firebaseConfig = {
-  apiKey: "AIzaSyB5CUucxPWfYDvew-euxIPkE3lxzZvyoQ8",
-  authDomain: "tiletalk-4f62d.firebaseapp.com",
-  projectId: "tiletalk-4f62d",
-  storageBucket: "tiletalk-4f62d.firebasestorage.app",
-  messagingSenderId: "791034227814",
-  appId: "1:791034227814:web:7b5d40fea741884a7d51a7",
-  measurementId: "G-YJF3FF4YYF"
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
-console.log('Firebase key:', firebaseConfig.apiKey);
+// No built-in fallback project: a missing setting stops the app here, rather than quietly
+// connecting it to someone else's database.
+const missing = Object.entries(firebaseConfig)
+  .filter(([key, value]) => key !== 'measurementId' && !value)
+  .map(([key]) => key);
+if (missing.length) {
+  throw new Error(
+    `Firebase isn't set up: ${missing.join(', ')} missing. Copy .env.example to .env.local, fill it in, and restart Expo.`,
+  );
+}
+if (__DEV__) console.log(`Firebase project: ${firebaseConfig.projectId}`);
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 function createAuth(): FirebaseAuth.Auth {
@@ -38,9 +50,10 @@ function createAuth(): FirebaseAuth.Auth {
 
 export const auth = createAuth();
 
-// Google sign-in in the app (Expo Go and builds). Paste the Web client ID from the Firebase console:
+// Google sign-in in the app (Expo Go and builds). Optional: without it, Google sign-in says it
+// isn't set up. Put the Web client ID from the Firebase console in .env.local:
 // Authentication > Sign-in method > Google > Web SDK configuration.
-export const googleWebClientId = '791034227814-elqp8q8neao4s4i6plbu9osnmkgj0lk0.apps.googleusercontent.com';
+export const googleWebClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '';
 // public/google-auth.html, once deployed. Add this exact address to that client's Authorized redirect
 // URIs in Google Cloud console > APIs & Services > Credentials.
 export const googleRedirectPage = `https://${firebaseConfig.projectId}.web.app/google-auth.html`;

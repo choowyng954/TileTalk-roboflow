@@ -256,7 +256,7 @@ export function friendlyAuthError(e: unknown): string {
     case 'auth/account-exists-with-different-credential':
       return 'That Google account’s email already has a password account. Log in with your email and password instead.';
     case 'tiletalk/google-not-set-up':
-      return 'Google sign-in isn’t set up in the app yet. Paste the Web client ID into src/firebase.ts.';
+      return 'Google sign-in isn’t set up in the app yet. Put the Web client ID in .env.local (see .env.example).';
     case 'tiletalk/google-failed':
       return `Google sign-in didn’t finish${(e as { message?: string }).message ? ` (${(e as { message?: string }).message})` : ''}. Try again.`;
     case 'auth/network-request-failed':

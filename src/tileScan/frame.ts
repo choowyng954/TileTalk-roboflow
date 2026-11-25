@@ -11,10 +11,7 @@ export interface Rect extends Size {
   y: number;
 }
 
-/**
- * The guide frame's width over its height. The model fits each photo into a square, so a very
- * narrow strip leaves the tiles small; 3:1 holds a row of 14-18 tiles, or two rows.
- */
+/** The guide frame's width over its height: 3:1 holds a row of 14-18 tiles, or two rows. */
 export const FRAME_ASPECT = 3;
 /** How much of the camera view's width the frame spans. */
 const FRAME_WIDTH_SHARE = 0.92;
@@ -48,6 +45,35 @@ export function photoCropFor(view: Size, frame: Rect, photo: Size, margin = FRAM
   const right = Math.min(photo.width, Math.ceil((frame.x + frame.width + padX + offsetX) / scale));
   const bottom = Math.min(photo.height, Math.ceil((frame.y + frame.height + padY + offsetY) / scale));
   return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+/**
+ * What to send for scanning: a square of the photo centred on the frame, and where the frame
+ * (with its margin) sits inside that square. The model stretches every photo into a square, so a
+ * strip of just the frame came out with its tiles stretched three times as tall, and tiles were
+ * missed; a square isn't stretched. Tiles found outside the frame are then ignored (see `focus`
+ * in readDetections), so other tiles on the table in the extra space don't count.
+ * Where the photo is too short for a square, the crop is as tall as the photo.
+ */
+export function scanCropFor(view: Size, frame: Rect, photo: Size, margin = FRAME_MARGIN): { crop: Rect; focus: Rect } {
+  const box = photoCropFor(view, frame, photo, margin);
+  const side = Math.min(Math.max(box.width, box.height), photo.width, photo.height);
+  const width = Math.max(box.width, side);
+  const height = Math.max(box.height, side);
+  const clamp = (start: number, length: number, limit: number) => Math.min(Math.max(0, Math.round(start)), Math.max(0, limit - length));
+  const x = clamp(box.x + box.width / 2 - width / 2, width, photo.width);
+  const y = clamp(box.y + box.height / 2 - height / 2, height, photo.height);
+  return {
+    crop: { x, y, width, height },
+    focus: { x: box.x - x, y: box.y - y, width: box.width, height: box.height },
+  };
+}
+
+/** A rectangle in an image of size `from`, moved to the same place in that image resized to `to`. */
+export function rescaleRect(rect: Rect, from: Size, to: Size): Rect {
+  const sx = to.width / from.width;
+  const sy = to.height / from.height;
+  return { x: rect.x * sx, y: rect.y * sy, width: rect.width * sx, height: rect.height * sy };
 }
 
 /** The size to shrink an image to so its long side is at most `longSide`. Never enlarges. */

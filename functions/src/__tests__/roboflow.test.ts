@@ -1,4 +1,4 @@
-import { cleanImage, MAX_IMAGE_CHARS, nextUsage, parseRoboflowResponse, SCANS_PER_WINDOW, WINDOW_MS } from '../roboflow';
+import { cleanImage, MAX_IMAGE_CHARS, MIN_CONFIDENCE, nextUsage, parseRoboflowResponse, roboflowUrl, SCANS_PER_WINDOW, WINDOW_MS } from '../roboflow';
 
 describe('parseRoboflowResponse', () => {
   test('keeps each prediction’s class, confidence and box, and the image size', () => {
@@ -18,6 +18,12 @@ describe('parseRoboflowResponse', () => {
       ],
       image: { width: 1024, height: 342 },
     });
+  });
+
+  test('leaves out tiles below the confidence cut-off', () => {
+    const tile = { x: 1, y: 2, width: 3, height: 4, class: '1B' };
+    const body = { predictions: [{ ...tile, confidence: MIN_CONFIDENCE }, { ...tile, confidence: MIN_CONFIDENCE - 0.01 }] };
+    expect(parseRoboflowResponse(body).detections.map((d) => d.confidence)).toEqual([MIN_CONFIDENCE]);
   });
 
   test('leaves out malformed predictions and copes with an empty or odd answer', () => {
@@ -61,5 +67,11 @@ describe('nextUsage', () => {
       usage: { windowStart: now + WINDOW_MS, count: 1 },
       retryInMs: 0,
     });
+  });
+});
+
+describe('roboflowUrl', () => {
+  test('asks for the model with the key and the confidence cut-off', () => {
+    expect(roboflowUrl('a b&c')).toBe(`https://serverless.roboflow.com/mahjong-baq4s/83?api_key=a%20b%26c&confidence=${MIN_CONFIDENCE}`);
   });
 });

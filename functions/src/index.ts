@@ -14,9 +14,8 @@ import {
   cleanImage,
   nextUsage,
   parseRoboflowResponse,
-  ROBOFLOW_MODEL,
   ROBOFLOW_TIMEOUT_MS,
-  ROBOFLOW_URL,
+  roboflowUrl,
   Usage,
 } from './roboflow';
 
@@ -57,7 +56,7 @@ export const scanTiles = onCall(
     const roboflowStarted = Date.now();
     let response: Response;
     try {
-      response = await fetch(`${ROBOFLOW_URL}/${ROBOFLOW_MODEL}?api_key=${encodeURIComponent(roboflowKey.value())}`, {
+      response = await fetch(roboflowUrl(roboflowKey.value()), {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: image,

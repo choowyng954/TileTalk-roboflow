@@ -4,7 +4,7 @@
 import { getApp } from 'firebase/app';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import '../firebase';
-import { Detection, readDetections, TileScan } from './readDetections';
+import { Detection, ReadOptions, readDetections, TileScan } from './readDetections';
 
 interface ScanTilesResult {
   detections: Detection[];
@@ -33,14 +33,17 @@ const MESSAGES: Record<string, string> = {
   'functions/internal': 'TileScan’s server couldn’t be reached. Check your connection, and that the scanTiles function is deployed.',
 };
 
-/** Reads the tiles in a photo (base64 JPEG). Throws an Error with a message to show the player. */
-export async function readTilesInPhoto(base64: string): Promise<PhotoReading> {
+/**
+ * Reads the tiles in a photo (base64 JPEG), counting only those in `focus` when given.
+ * Throws an Error with a message to show the player.
+ */
+export async function readTilesInPhoto(base64: string, focus?: ReadOptions['focus']): Promise<PhotoReading> {
   const started = Date.now();
   const scanTiles = httpsCallable<{ image: string }, ScanTilesResult>(getFunctions(getApp()), 'scanTiles');
   try {
     const { data } = await scanTiles({ image: base64 });
     return {
-      scan: readDetections(data.detections),
+      scan: readDetections(data.detections, { focus }),
       detections: data.detections,
       ms: { total: Date.now() - started, server: data.ms.total, roboflow: data.ms.roboflow },
     };

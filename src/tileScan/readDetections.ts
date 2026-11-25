@@ -44,6 +44,15 @@ export interface TileScan {
   /** Flowers and seasons, in the same order. */
   flowers: ScannedTile[];
   rowCount: number;
+  /** Tiles found outside the guide frame, and left out. */
+  ignored: number;
+}
+
+export interface ReadOptions {
+  /** Below this confidence a tile is flagged as unsure. */
+  unsureBelow?: number;
+  /** Only tiles whose centre is in this area count; the rest of the photo is other tiles on the table. */
+  focus?: { x: number; y: number; width: number; height: number };
 }
 
 /** Below this confidence a tile is flagged as unsure. */
@@ -76,10 +85,14 @@ const readingOf = (d: Detection): TileReading => ({ code: tileCodeForLabel(d.lab
  * flags what needs checking. Nothing is thrown away except a second reading of the same tile,
  * which is kept as an alternative.
  */
-export function readDetections(detections: Detection[], unsureBelow = UNSURE_BELOW): TileScan {
-  const valid = detections.filter(
+export function readDetections(detections: Detection[], { unsureBelow = UNSURE_BELOW, focus }: ReadOptions = {}): TileScan {
+  const wellFormed = detections.filter(
     (d) => [d.x, d.y, d.width, d.height, d.confidence].every(Number.isFinite) && d.width > 0 && d.height > 0,
   );
+  const inFocus = (d: Detection) =>
+    !focus || (d.x >= focus.x && d.x <= focus.x + focus.width && d.y >= focus.y && d.y <= focus.y + focus.height);
+  const valid = wellFormed.filter(inFocus);
+  const ignored = wellFormed.length - valid.length;
 
   // The same tile read as two different tiles: keep the most confident reading.
   const kept: { d: Detection; alternatives: TileReading[] }[] = [];
@@ -88,7 +101,7 @@ export function readDetections(detections: Detection[], unsureBelow = UNSURE_BEL
     if (!same) kept.push({ d, alternatives: [] });
     else if (d.label !== same.d.label && !same.alternatives.some((a) => a.label === d.label)) same.alternatives.push(readingOf(d));
   }
-  if (kept.length === 0) return { tiles: [], flowers: [], rowCount: 0 };
+  if (kept.length === 0) return { tiles: [], flowers: [], rowCount: 0, ignored };
 
   // Rows: top to bottom, a new row when a tile sits clearly below the current row.
   const tileHeight = median(kept.map((k) => k.d.height));
@@ -126,7 +139,7 @@ export function readDetections(detections: Detection[], unsureBelow = UNSURE_BEL
   }
 
   const isBonus = (t: ScannedTile) => t.code !== null && BONUS_TILES.includes(t.code);
-  return { tiles: all.filter((t) => !isBonus(t)), flowers: all.filter(isBonus), rowCount: rows.length };
+  return { tiles: all.filter((t) => !isBonus(t)), flowers: all.filter(isBonus), rowCount: rows.length, ignored };
 }
 
 /**

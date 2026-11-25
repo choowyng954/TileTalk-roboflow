@@ -1,7 +1,7 @@
 // TileScan: crop a photo to the guide frame and shrink it, ready to send for scanning.
 
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
-import { Rect, SCAN_JPEG_QUALITY, scaledToFit, Size } from './frame';
+import { Rect, rescaleRect, SCAN_JPEG_QUALITY, scaledToFit, Size } from './frame';
 
 export interface PreparedPhoto {
   /** For showing the photo in the app. */
@@ -16,10 +16,15 @@ export interface PreparedPhoto {
   original: Size;
   /** How long cropping and shrinking took, in milliseconds. */
   ms: number;
+  /** The guide frame's area in this photo, in its pixels. Tiles outside it are ignored. */
+  focus?: Rect;
 }
 
-/** Crops the photo (when given a crop) and shrinks it to at most SCAN_LONG_SIDE on its long side. */
-export async function preparePhoto(uri: string, original: Size, crop?: Rect): Promise<PreparedPhoto> {
+/**
+ * Crops the photo (when given a crop) and shrinks it to at most SCAN_LONG_SIDE on its long side.
+ * `focus` is an area within the crop, moved to match the shrunk photo.
+ */
+export async function preparePhoto(uri: string, original: Size, crop?: Rect, focus?: Rect): Promise<PreparedPhoto> {
   const started = Date.now();
   const context = ImageManipulator.manipulate(uri);
   if (crop) context.crop({ originX: crop.x, originY: crop.y, width: crop.width, height: crop.height });
@@ -32,5 +37,14 @@ export async function preparePhoto(uri: string, original: Size, crop?: Rect): Pr
   const base64 = saved.base64 ?? '';
   // Every 4 base64 characters hold 3 bytes, less any "=" padding at the end.
   const bytes = Math.floor((base64.length * 3) / 4) - (base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0);
-  return { uri: saved.uri, base64, width: saved.width, height: saved.height, bytes, original, ms: Date.now() - started };
+  return {
+    uri: saved.uri,
+    base64,
+    width: saved.width,
+    height: saved.height,
+    bytes,
+    original,
+    ms: Date.now() - started,
+    ...(focus && cropped.width > 0 ? { focus: rescaleRect(focus, cropped, saved) } : {}),
+  };
 }

@@ -99,8 +99,17 @@ describe('readDetections', () => {
   });
 
   test('ignores broken detections, and an empty photo has no tiles', () => {
-    expect(readDetections([{ label: '1C', confidence: 0.9, x: NaN, y: 0, width: W, height: H }])).toEqual({ tiles: [], flowers: [], rowCount: 0 });
-    expect(readDetections([])).toEqual({ tiles: [], flowers: [], rowCount: 0 });
+    expect(readDetections([{ label: '1C', confidence: 0.9, x: NaN, y: 0, width: W, height: H }])).toEqual({ tiles: [], flowers: [], rowCount: 0, ignored: 0 });
+    expect(readDetections([])).toEqual({ tiles: [], flowers: [], rowCount: 0, ignored: 0 });
+  });
+
+  test('only counts tiles whose centre is inside the focus area', () => {
+    // Hand in a row at y=100; discards on the table above and below it.
+    const photo = [...row(['1C', '2C', '3C']), ...row(['9B', '9B'], 20), ...row(['EW'], 200)];
+    const scan = readDetections(photo, { focus: { x: 0, y: 60, width: 400, height: 80 } });
+    expect(codes(scan.tiles)).toEqual(['man1', 'man2', 'man3']);
+    expect(scan.ignored).toBe(3);
+    expect(readDetections(photo).ignored).toBe(0);
   });
 });
 

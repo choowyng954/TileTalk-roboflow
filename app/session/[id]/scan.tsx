@@ -8,7 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Protected } from '../../../src/auth';
 import { TileImage } from '../../../src/components/TileArt';
 import { tileName } from '../../../src/game/tiles';
-import { frameIn, photoCropFor, Size } from '../../../src/tileScan/frame';
+import { frameIn, Rect, scanCropFor, Size } from '../../../src/tileScan/frame';
 import { PreparedPhoto, preparePhoto } from '../../../src/tileScan/preparePhoto';
 import type { ScannedTile, TileFlag } from '../../../src/tileScan/readDetections';
 import { PhotoReading, readTilesInPhoto } from '../../../src/tileScan/readPhoto';
@@ -23,17 +23,25 @@ export default function TileScanPage() {
   );
 }
 
+/** A photo just taken or chosen. Camera photos are cropped around the guide frame, which is `focus`. */
+interface Shot {
+  uri: string;
+  size: Size;
+  crop?: Rect;
+  focus?: Rect;
+}
+
 function TileScanScreen() {
   const [photo, setPhoto] = useState<PreparedPhoto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const prepare = async (take: () => Promise<{ uri: string; size: Size; crop?: ReturnType<typeof photoCropFor> } | null>) => {
+  const prepare = async (take: () => Promise<Shot | null>) => {
     setBusy(true);
     setError(null);
     try {
       const shot = await take();
-      if (shot) setPhoto(await preparePhoto(shot.uri, shot.size, shot.crop));
+      if (shot) setPhoto(await preparePhoto(shot.uri, shot.size, shot.crop, shot.focus));
     } catch (e) {
       setError(`Couldn’t get the photo: ${(e as Error).message}`);
     } finally {
@@ -59,7 +67,7 @@ function CameraStage({
   busy,
   error,
 }: {
-  onCapture: (take: () => Promise<{ uri: string; size: Size; crop: ReturnType<typeof photoCropFor> } | null>) => void;
+  onCapture: (take: () => Promise<Shot | null>) => void;
   onPick: () => void;
   busy: boolean;
   error: string | null;
@@ -100,7 +108,7 @@ function CameraStage({
       if (!camera.current || !view || !frame) return null;
       const shot = await camera.current.takePictureAsync({ quality: 0.9 });
       const size = { width: shot.width, height: shot.height };
-      return { uri: shot.uri, size, crop: photoCropFor(view, frame, size) };
+      return { uri: shot.uri, size, ...scanCropFor(view, frame, size) };
     });
 
   return (
@@ -160,7 +168,7 @@ function PhotoPreview({
     setScanning(true);
     setReadError(null);
     try {
-      const result = await readTilesInPhoto(photo.base64);
+      const result = await readTilesInPhoto(photo.base64, photo.focus);
       setReading(result);
       setTimes((t) => [...t, result.ms.total]);
     } catch (e) {
@@ -173,7 +181,10 @@ function PhotoPreview({
   return (
     <Screen>
       <Text style={styles.heading}>Your photo</Text>
-      <Image source={{ uri: photo.uri }} style={[styles.preview, { aspectRatio: photo.width / photo.height }]} resizeMode="contain" />
+      <View style={[styles.preview, { aspectRatio: photo.width / photo.height }]}>
+        <Image source={{ uri: photo.uri }} style={styles.fill} resizeMode="contain" />
+        {photo.focus ? <FocusShade focus={photo.focus} photo={photo} /> : null}
+      </View>
       <Muted>
         {photo.width} × {photo.height} pixels, {Math.round(photo.bytes / 1024)} KB, ready in {(photo.ms / 1000).toFixed(1)} s. Taken at{' '}
         {photo.original.width} × {photo.original.height}.
@@ -187,6 +198,22 @@ function PhotoPreview({
       </Row>
       <ErrorText message={error} />
     </Screen>
+  );
+}
+
+/** Darkens the photo outside the guide frame: tiles there aren't counted. */
+function FocusShade({ focus, photo }: { focus: Rect; photo: Size }) {
+  const styles = useStyles();
+  const pct = (n: number, of: number) => `${(100 * n) / of}%` as const;
+  const top = pct(focus.y, photo.height);
+  const bottom = pct(photo.height - focus.y - focus.height, photo.height);
+  return (
+    <View pointerEvents="none" style={styles.fill}>
+      <View style={[styles.shade, { left: 0, right: 0, top: 0, height: top }]} />
+      <View style={[styles.shade, { left: 0, right: 0, bottom: 0, height: bottom }]} />
+      <View style={[styles.shade, { left: 0, width: pct(focus.x, photo.width), top, bottom }]} />
+      <View style={[styles.shade, { right: 0, width: pct(photo.width - focus.x - focus.width, photo.width), top, bottom }]} />
+    </View>
   );
 }
 
@@ -212,6 +239,11 @@ function ScanResult({ reading, times }: { reading: PhotoReading; times: number[]
         {scan.rowCount > 1 ? ` in ${scan.rowCount} rows` : ''}
       </Text>
       {scan.tiles.length + scan.flowers.length === 0 ? <Muted>No tiles found. Try a closer, brighter photo.</Muted> : null}
+      {scan.ignored ? (
+        <Muted>
+          {scan.ignored} {scan.ignored === 1 ? 'tile' : 'tiles'} outside the box ignored.
+        </Muted>
+      ) : null}
       <View style={styles.scanRow}>{scan.tiles.map(tile)}</View>
       {scan.flowers.length ? <View style={styles.scanRow}>{scan.flowers.map(tile)}</View> : null}
       {toCheck.length ? (
@@ -243,7 +275,7 @@ const useStyles = themedStyles((colors) => ({
   controls: { padding: 16, gap: 12 },
   grow: { flex: 1 },
   heading: { color: colors.text, fontSize: 18, fontWeight: '700' },
-  preview: { width: '100%', borderRadius: radius.control, backgroundColor: colors.surfaceDeep },
+  preview: { width: '100%', borderRadius: radius.control, backgroundColor: colors.surfaceDeep, overflow: 'hidden' },
   scanRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   scanTile: { alignItems: 'center', padding: 2, borderRadius: radius.tile, borderWidth: 2, borderColor: 'transparent' },
   scanTileFlagged: { borderColor: colors.warning },

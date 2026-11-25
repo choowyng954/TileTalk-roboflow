@@ -7,6 +7,12 @@ export const ROBOFLOW_MODEL = 'mahjong-baq4s/83';
 export const ROBOFLOW_URL = 'https://serverless.roboflow.com';
 /** How long to wait for Roboflow before giving up. */
 export const ROBOFLOW_TIMEOUT_MS = 20_000;
+/**
+ * Tiles the model is less sure of than this (0 to 1) aren't returned. Roboflow's own default is
+ * 0.4; lower, so a tile the model doubts is shown to the player to check rather than lost. The app
+ * marks anything under 0.6 as unsure.
+ */
+export const MIN_CONFIDENCE = 0.25;
 
 /** A photo is about 60-100 KB; this allows about 1.5 MB, as base64. */
 export const MAX_IMAGE_CHARS = 2_000_000;
@@ -31,9 +37,14 @@ export interface ImageSize {
 
 const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
+/** The address to send a photo to. The key is part of it, so it must never be logged. */
+export function roboflowUrl(apiKey: string): string {
+  return `${ROBOFLOW_URL}/${ROBOFLOW_MODEL}?api_key=${encodeURIComponent(apiKey)}&confidence=${MIN_CONFIDENCE}`;
+}
+
 /**
- * Roboflow's answer, keeping only what TileScan uses. Anything malformed is left out rather than
- * passed on.
+ * Roboflow's answer, keeping only what TileScan uses. Anything malformed, or below
+ * MIN_CONFIDENCE, is left out rather than passed on.
  */
 export function parseRoboflowResponse(body: unknown): { detections: Detection[]; image: ImageSize | null } {
   const data = (body ?? {}) as { predictions?: unknown; image?: { width?: unknown; height?: unknown } };
@@ -43,6 +54,8 @@ export function parseRoboflowResponse(body: unknown): { detections: Detection[];
     if (!p || typeof p.class !== 'string') continue;
     const { x, y, width, height, confidence } = p;
     if (![x, y, width, height, confidence].every(isNumber)) continue;
+    // Checked here too, in case Roboflow ever reads the confidence setting differently.
+    if ((confidence as number) < MIN_CONFIDENCE) continue;
     detections.push({ label: p.class, confidence: confidence as number, x: x as number, y: y as number, width: width as number, height: height as number });
   }
   const w = Number(data.image?.width);

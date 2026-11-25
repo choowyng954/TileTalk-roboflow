@@ -36,7 +36,23 @@
         }
       ],
       "expo-status-bar",
-      "expo-image"
+      "expo-image",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "TileTalk uses the camera to photograph your mahjong tiles and read your hand.",
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "TileTalk opens your photos so you can choose a picture of your mahjong tiles to read.",
+          "cameraPermission": "TileTalk uses the camera to photograph your mahjong tiles and read your hand.",
+          "microphonePermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

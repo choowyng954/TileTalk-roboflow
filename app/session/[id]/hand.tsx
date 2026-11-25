@@ -322,6 +322,7 @@ function RecordHandScreen() {
             // Not in a card, so the tiles can be bigger and easier to tap.
             <View style={styles.tileSection}>
               <SectionTitle>Winning tiles</SectionTitle>
+              <Button title="TileScan: photograph your tiles" variant="secondary" onPress={() => router.push(`/session/${id}/scan`)} />
               <TilePicker
                 tiles={tiles}
                 flowers={flowers}

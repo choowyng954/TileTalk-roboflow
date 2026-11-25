@@ -44,6 +44,7 @@ export default function RootLayout() {
           <Stack.Screen name="session/new" options={{ title: 'New game' }} />
           <Stack.Screen name="session/[id]/index" options={{ title: 'Game' }} />
           <Stack.Screen name="session/[id]/hand" options={{ title: 'Record hand', presentation: 'modal', animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="session/[id]/scan" options={{ title: 'TileScan', presentation: 'modal', animation: 'slide_from_bottom' }} />
         </Stack>
       </AuthProvider>
     </WebSafeArea>

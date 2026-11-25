@@ -1,14 +1,16 @@
 // TileScan: take a photo of a hand of tiles (or choose one), cropped to a guide frame and shrunk
-// ready to be read, then read by the scanTiles Cloud Function. Fixing and using the tiles comes next.
+// ready to be read, then read by the scanTiles Cloud Function and laid out on the Record hand screen.
 
 import React, { useRef, useState } from 'react';
 import { Image, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Protected } from '../../../src/auth';
 import { TileImage } from '../../../src/components/TileArt';
 import { tileName } from '../../../src/game/tiles';
 import { frameIn, Rect, scanCropFor, Size } from '../../../src/tileScan/frame';
+import { scannedHandFrom, sendScannedHand } from '../../../src/tileScan/handoff';
 import { PreparedPhoto, preparePhoto } from '../../../src/tileScan/preparePhoto';
 import type { ScannedTile, TileFlag } from '../../../src/tileScan/readDetections';
 import { PhotoReading, readTilesInPhoto } from '../../../src/tileScan/readPhoto';
@@ -223,8 +225,14 @@ const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
 /** What the model found: the tiles in reading order, anything to check highlighted, and timings. */
 function ScanResult({ reading, times }: { reading: PhotoReading; times: number[] }) {
   const styles = useStyles();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const { scan, ms } = reading;
   const toCheck = [...scan.tiles, ...scan.flowers].filter((t) => t.flags.length > 0);
+  // Back to Record hand, which picks the tiles up (see takeScannedHand there).
+  const layOutTiles = () => {
+    sendScannedHand(id, scannedHandFrom(scan));
+    router.back();
+  };
   const tile = (t: ScannedTile, i: number) => (
     <View key={i} style={[styles.scanTile, t.flags.length > 0 && styles.scanTileFlagged]}>
       {t.code ? <TileImage code={t.code} width={SCAN_TILE} /> : <Text style={styles.unknown}>?</Text>}
@@ -260,6 +268,8 @@ function ScanResult({ reading, times }: { reading: PhotoReading; times: number[]
         {seconds(ms.total - ms.server)} sending and receiving.
         {times.length > 1 ? ` Every read so far: ${times.map(seconds).join(', ')}.` : ''}
       </Muted>
+      <Button title="Use these tiles" onPress={layOutTiles} disabled={scan.tiles.length + scan.flowers.length === 0} />
+      <Muted>They’re laid out in the tile calculator, replacing any there, for you to check before saving.</Muted>
     </Card>
   );
 }

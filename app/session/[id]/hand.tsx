@@ -1,6 +1,6 @@
-import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Protected, useSignedInUser } from '../../../src/auth';
 import { RiichiHandForm } from '../../../src/components/RiichiHandForm';
 import { TilePicker } from '../../../src/components/TilePicker';
@@ -30,6 +30,7 @@ import {
   WinType,
 } from '../../../src/scoring';
 import { colors, radius, themedStyles } from '../../../src/theme';
+import { ScannedHand, takeScannedHand } from '../../../src/tileScan/handoff';
 import type { HandResult, Player, Session } from '../../../src/types';
 import { Button, Card, Chip, ErrorText, formatPoints, Loading, Muted, Row, Screen, SectionTitle, Stepper } from '../../../src/ui';
 
@@ -65,6 +66,19 @@ function RecordHandScreen() {
     if (tiles.length || flowers.length) tileDrafts.set(id, { tiles, flowers });
     else tileDrafts.delete(id);
   }, [id, tiles, flowers]);
+  // TileScan: tiles read from a photo arrive here when the TileScan screen closes, replacing any
+  // laid out, with a note of what to check.
+  const [scanned, setScanned] = useState<ScannedHand | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      const hand = takeScannedHand(id);
+      if (!hand) return;
+      setTiles(hand.tiles);
+      setFlowers(hand.flowers);
+      setScanned(hand);
+      setError(null);
+    }, [id]),
+  );
   // Hong Kong: whether any set was melded (claimed from a discard), which the tiles can't show.
   const [melded, setMelded] = useState(true);
   // Tapping a tile redraws the tiles straight away; reading them and redrawing the patterns
@@ -323,6 +337,7 @@ function RecordHandScreen() {
             <View style={styles.tileSection}>
               <SectionTitle>Winning tiles</SectionTitle>
               <Button title="TileScan: photograph your tiles" variant="secondary" onPress={() => router.push(`/session/${id}/scan`)} />
+              {scanned ? <ScannedNote hand={scanned} /> : null}
               <TilePicker
                 tiles={tiles}
                 flowers={flowers}
@@ -380,6 +395,22 @@ function RecordHandScreen() {
   );
 }
 
+/** TileScan: what was read from the photo, and anything worth checking before saving. */
+function ScannedNote({ hand }: { hand: ScannedHand }) {
+  const styles = useStyles();
+  const count = hand.tiles.length + hand.flowers.length;
+  return (
+    <View style={styles.scanned}>
+      <Text style={styles.readingLabel}>From TileScan</Text>
+      <Muted>
+        {count} {count === 1 ? 'tile' : 'tiles'} laid out from your photo. Check them against your hand before saving.
+      </Muted>
+      {hand.toCheck.length ? <Muted>The scan wasn’t sure of: {hand.toCheck.join(', ')}.</Muted> : null}
+      {hand.leftOut.length ? <Muted>Not laid out, add the right tile if needed: {hand.leftOut.join(', ')}.</Muted> : null}
+    </View>
+  );
+}
+
 function PaymentList({ players, payments }: { players: Player[]; payments: Record<string, number> }) {
   const styles = useStyles();
   return (
@@ -405,6 +436,7 @@ const useStyles = themedStyles((colors) => ({
   tileSection: { gap: 12 },
   reading: { gap: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: colors.border },
   readingLabel: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
+  scanned: { gap: 4, padding: 10, borderRadius: radius.control, borderWidth: 1, borderColor: colors.warning },
   readingName: { color: colors.text, fontSize: 17, fontWeight: '800' },
   payment: { flexDirection: 'row', justifyContent: 'space-between' },
   paymentName: { color: colors.text, fontSize: 16 },

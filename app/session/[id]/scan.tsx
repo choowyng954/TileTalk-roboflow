@@ -1,13 +1,17 @@
 // TileScan: take a photo of a hand of tiles (or choose one), cropped to a guide frame and shrunk
-// ready to be read. Reading the tiles comes next; for now this shows the prepared photo.
+// ready to be read, then read by the scanTiles Cloud Function. Fixing and using the tiles comes next.
 
 import React, { useRef, useState } from 'react';
 import { Image, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { Protected } from '../../../src/auth';
+import { TileImage } from '../../../src/components/TileArt';
+import { tileName } from '../../../src/game/tiles';
 import { frameIn, photoCropFor, Size } from '../../../src/tileScan/frame';
 import { PreparedPhoto, preparePhoto } from '../../../src/tileScan/preparePhoto';
+import type { ScannedTile, TileFlag } from '../../../src/tileScan/readDetections';
+import { PhotoReading, readTilesInPhoto } from '../../../src/tileScan/readPhoto';
 import { radius, themedStyles } from '../../../src/theme';
 import { Button, Card, ErrorText, Loading, Muted, Row, Screen } from '../../../src/ui';
 
@@ -146,27 +150,89 @@ function PhotoPreview({
   error: string | null;
 }) {
   const styles = useStyles();
+  const [reading, setReading] = useState<PhotoReading | null>(null);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  // Every read of this photo, to compare times: the first is often slower while the server starts.
+  const [times, setTimes] = useState<number[]>([]);
+
+  const read = async () => {
+    setScanning(true);
+    setReadError(null);
+    try {
+      const result = await readTilesInPhoto(photo.base64);
+      setReading(result);
+      setTimes((t) => [...t, result.ms.total]);
+    } catch (e) {
+      setReadError((e as Error).message);
+    } finally {
+      setScanning(false);
+    }
+  };
+
   return (
     <Screen>
       <Text style={styles.heading}>Your photo</Text>
       <Image source={{ uri: photo.uri }} style={[styles.preview, { aspectRatio: photo.width / photo.height }]} resizeMode="contain" />
-      <Card>
-        <Muted>
-          {photo.width} × {photo.height} pixels, {Math.round(photo.bytes / 1024)} KB, ready in {(photo.ms / 1000).toFixed(1)} s.
-        </Muted>
-        <Muted>
-          Taken at {photo.original.width} × {photo.original.height}. Check that every tile is in the picture and easy to make out.
-        </Muted>
-        <Muted>Reading the tiles in this photo is the next step of TileScan, still to come.</Muted>
-      </Card>
+      <Muted>
+        {photo.width} × {photo.height} pixels, {Math.round(photo.bytes / 1024)} KB, ready in {(photo.ms / 1000).toFixed(1)} s. Taken at{' '}
+        {photo.original.width} × {photo.original.height}.
+      </Muted>
+      <Button title={reading ? 'Read again' : 'Read tiles'} onPress={read} loading={scanning} />
+      <ErrorText message={readError} />
+      {reading ? <ScanResult reading={reading} times={times} /> : null}
       <Row>
-        <Button title="Retake" onPress={onRetake} style={styles.grow} />
+        <Button title="Retake" variant="secondary" onPress={onRetake} style={styles.grow} />
         <Button title="Gallery" variant="secondary" onPress={onPick} loading={busy} style={styles.grow} />
       </Row>
       <ErrorText message={error} />
     </Screen>
   );
 }
+
+const SCAN_TILE = 34;
+const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
+
+/** What the model found: the tiles in reading order, anything to check highlighted, and timings. */
+function ScanResult({ reading, times }: { reading: PhotoReading; times: number[] }) {
+  const styles = useStyles();
+  const { scan, ms } = reading;
+  const toCheck = [...scan.tiles, ...scan.flowers].filter((t) => t.flags.length > 0);
+  const tile = (t: ScannedTile, i: number) => (
+    <View key={i} style={[styles.scanTile, t.flags.length > 0 && styles.scanTileFlagged]}>
+      {t.code ? <TileImage code={t.code} width={SCAN_TILE} /> : <Text style={styles.unknown}>?</Text>}
+      <Text style={styles.scanConfidence}>{Math.round(t.confidence * 100)}%</Text>
+    </View>
+  );
+  return (
+    <Card>
+      <Text style={styles.heading}>
+        {scan.tiles.length} {scan.tiles.length === 1 ? 'tile' : 'tiles'}
+        {scan.flowers.length ? ` and ${scan.flowers.length} ${scan.flowers.length === 1 ? 'flower' : 'flowers'}` : ''}
+        {scan.rowCount > 1 ? ` in ${scan.rowCount} rows` : ''}
+      </Text>
+      {scan.tiles.length + scan.flowers.length === 0 ? <Muted>No tiles found. Try a closer, brighter photo.</Muted> : null}
+      <View style={styles.scanRow}>{scan.tiles.map(tile)}</View>
+      {scan.flowers.length ? <View style={styles.scanRow}>{scan.flowers.map(tile)}</View> : null}
+      {toCheck.length ? (
+        <Muted>
+          {toCheck.length} to check (outlined):{' '}
+          {toCheck
+            .map((t) => `${t.code ? tileName(t.code) : `“${t.label}”`} (${t.flags.map((f) => FLAG_NAMES[f]).join(', ')})`)
+            .join('; ')}
+          .
+        </Muted>
+      ) : null}
+      <Muted>
+        Read in {seconds(ms.total)}: {seconds(ms.roboflow)} at Roboflow, {seconds(ms.server - ms.roboflow)} on the server,{' '}
+        {seconds(ms.total - ms.server)} sending and receiving.
+        {times.length > 1 ? ` Every read so far: ${times.map(seconds).join(', ')}.` : ''}
+      </Muted>
+    </Card>
+  );
+}
+
+const FLAG_NAMES: Record<TileFlag, string> = { unsure: 'unsure', unknown: 'unknown label', tooMany: 'one too many' };
 
 const useStyles = themedStyles((colors) => ({
   stage: { flex: 1, backgroundColor: colors.background },
@@ -178,4 +244,9 @@ const useStyles = themedStyles((colors) => ({
   grow: { flex: 1 },
   heading: { color: colors.text, fontSize: 18, fontWeight: '700' },
   preview: { width: '100%', borderRadius: radius.control, backgroundColor: colors.surfaceDeep },
+  scanRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  scanTile: { alignItems: 'center', padding: 2, borderRadius: radius.tile, borderWidth: 2, borderColor: 'transparent' },
+  scanTileFlagged: { borderColor: colors.warning },
+  scanConfidence: { color: colors.textMuted, fontSize: 10 },
+  unknown: { width: SCAN_TILE, height: SCAN_TILE * 1.33, textAlign: 'center', textAlignVertical: 'center', color: colors.warning, fontSize: 20, fontWeight: '700' },
 }));

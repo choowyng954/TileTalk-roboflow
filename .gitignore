@@ -39,3 +39,8 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Cloud Functions (TileScan): build output and local secrets
+functions/lib/
+functions/.secret.local
+*.secret.local

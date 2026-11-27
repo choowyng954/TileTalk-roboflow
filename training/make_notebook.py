@@ -82,9 +82,12 @@ it afterwards: Google Account → Security → Your connections to third-party a
 )
 code(
     """
-import subprocess
-gpu = subprocess.run(['nvidia-smi', '-L'], capture_output=True, text=True).stdout.strip()
-print(gpu or 'No GPU! Runtime > Change runtime type > T4 GPU, then run this cell again.')
+import shutil, subprocess
+if shutil.which('nvidia-smi'):
+    print(subprocess.run(['nvidia-smi', '-L'], capture_output=True, text=True).stdout.strip())
+else:
+    print('No GPU. Training (step 7) and scoring (step 8) need one: Runtime > Change runtime type > T4 GPU,'
+          ' then run from step 1 again. Exporting and checking (steps 9 to 11) work without one.')
 
 if USE_DRIVE:
     from google.colab import drive

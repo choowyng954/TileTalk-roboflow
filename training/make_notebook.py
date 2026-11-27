@@ -300,8 +300,9 @@ code(EXPORT)
 md(
     """
 ## 10. Check it like TileScan would
-Runs the exported model on the test photos the way the app will, and counts tiles found, named
-correctly, missed, and found where there wasn't one. Shows a few photos with what it read.
+Runs the exported model on up to 300 test photos the way the app will, and counts tiles found,
+named correctly, missed, and found where there wasn't one. Shows a few photos with what it read.
+Takes a minute or two with a GPU runtime, longer without (the progress bar shows how far it's got).
 """
 )
 CHECK = """
@@ -333,14 +334,16 @@ def iou(a, b):
     inter = max(0, x2 - x1) * max(0, y2 - y1)
     return inter / (a[2] * a[3] + b[2] * b[3] - inter + 1e-9)
 
-def check(split='test', limit=None):
+def check(split='test', limit=300):
+    \"\"\"Up to `limit` photos (None for all): a few hundred give a reliable picture.\"\"\"
+    from tqdm.auto import tqdm
     coco = json.load(open(f'{DATA}/annotations/{split}.json'))
     truth = collections.defaultdict(list)
     for a in coco['annotations']:
         truth[a['image_id']].append((CLASSES[a['category_id'] - 1], a['bbox']))
     right = wrong = missed = extra = 0
     mixups = collections.Counter()
-    for im in coco['images'][:limit]:
+    for im in tqdm(coco['images'][:limit], desc=f'Reading {split} photos'):
         found = read_tiles(f'{DATA}/{split}/{im["file_name"]}')
         unmatched = list(found)
         for label, box in truth[im['id']]:
@@ -356,7 +359,7 @@ def check(split='test', limit=None):
                 mixups[f'{label} read as {match[0]}'] += 1
         extra += len(unmatched)
     total = right + wrong + missed
-    print(f'{split}: {total} tiles. Named right {right / max(total, 1):.1%}, named wrong {wrong / max(total, 1):.1%}, '
+    print(f'{split}: {min(limit or 10**9, len(coco["images"]))} photos, {total} tiles. Named right {right / max(total, 1):.1%}, named wrong {wrong / max(total, 1):.1%}, '
           f'missed {missed / max(total, 1):.1%}. Extra (no tile there): {extra}.')
     if mixups:
         print('Most common mix-ups:', ', '.join(f'{k} ({v})' for k, v in mixups.most_common(8)))

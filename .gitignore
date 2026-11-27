@@ -44,3 +44,6 @@ yarn-error.*
 functions/lib/
 functions/.secret.local
 *.secret.local
+
+# TileScan speed test: model files are downloaded, not committed (see public/speedtest/index.html)
+public/speedtest/*.onnx

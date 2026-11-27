@@ -35,8 +35,9 @@ It uses the **Mahjong dataset by jon-chan-gnsoa** on Roboflow Universe
 **Before you start:** *Runtime → Change runtime type → T4 GPU → Save.*
 
 Then run each cell in order with the ▶ button (or *Runtime → Run all*). Training takes about
-2–4 hours. Everything important is saved to your Google Drive, in a **TileScan** folder, so if Colab
-disconnects you can run the cells again and training carries on where it stopped.
+2–4 hours. Results are saved in a **TileScan** folder on your Google Drive (it writes only there, and deletes
+nothing), so if Colab disconnects you can run the cells again and training carries on where it
+stopped. To keep your Drive out of it, set `USE_DRIVE = False` in step 1.
 """
 )
 
@@ -47,9 +48,14 @@ EPOCHS = 60   # Passes over all the photos. 60 takes about 2-4 hours on a free T
 BATCH = 32    # Photos per training step. Lower to 16 if you see "CUDA out of memory".
 DATASET = ('jon-chan-gnsoa', 'mahjong-baq4s', 83)  # Roboflow workspace, project, version
 
+# Google Drive keeps the results and lets training carry on after a disconnect. The notebook only
+# writes inside a "TileScan" folder there, and deletes nothing. Set this to False to keep everything
+# in Colab instead: nothing touches your Drive, but a disconnect means starting training again.
+USE_DRIVE = True
+
 WORK = '/content'                          # Colab's scratch space (wiped when Colab disconnects)
 DATA = f'{WORK}/roboflow'                  # Where the dataset is unpacked
-OUT = '/content/drive/MyDrive/TileScan'    # Kept on your Google Drive
+OUT = '/content/drive/MyDrive/TileScan' if USE_DRIVE else f'{WORK}/TileScan'
 
 import os
 # Newer PyTorch refuses some older checkpoint files unless told they're trusted. YOLOX's are.
@@ -64,15 +70,25 @@ assert len(CLASSES) == 42
 """
 )
 
-md("## 2. Check the GPU and connect Google Drive\nIf this says there's no GPU, change the runtime type (see the top) and run it again.\nWhen asked, allow access to your Google Drive.")
+md(
+    """
+## 2. Check the GPU and connect Google Drive
+If this says there's no GPU, change the runtime type (see the top) and run it again.
+
+With `USE_DRIVE = True`, Google asks you to allow access to your Drive (it may call it "Google Drive
+for desktop": that's how Colab connects). The access lasts while this Colab session runs. To remove
+it afterwards: Google Account → Security → Your connections to third-party apps & services.
+"""
+)
 code(
     """
 import subprocess
 gpu = subprocess.run(['nvidia-smi', '-L'], capture_output=True, text=True).stdout.strip()
 print(gpu or 'No GPU! Runtime > Change runtime type > T4 GPU, then run this cell again.')
 
-from google.colab import drive
-drive.mount('/content/drive')
+if USE_DRIVE:
+    from google.colab import drive
+    drive.mount('/content/drive')
 os.makedirs(OUT, exist_ok=True)
 print('Saving to', OUT)
 """
@@ -186,6 +202,7 @@ class Exp(BaseExp):
         self.warmup_epochs = 3
         self.no_aug_epochs = {min(10, max(1, EPOCHS // 4))}
         self.eval_interval = 5
+        self.save_history_ckpt = False   # Keep only the latest and best (each is about 40 MB)
         self.data_num_workers = 2
         self.output_dir = {OUT!r}
         self.exp_name = 'tilescan_yolox_tiny'
@@ -218,8 +235,8 @@ md(
 About 2–4 hours. It prints progress as it goes, and checks itself on the valid photos every 5 epochs
 (look for **AP50**: the share of tiles found and named correctly, out of 1.00).
 
-If Colab disconnects, reconnect, run cells 1 to 6 again, then this one: it carries on from the last
-saved epoch.
+If Colab disconnects, reconnect, run cells 1 to 6 again, then this one: with `USE_DRIVE = True` it
+carries on from the last saved epoch (without Drive, it starts again).
 """
 )
 code(

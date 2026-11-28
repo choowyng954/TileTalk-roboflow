@@ -35,8 +35,9 @@ It uses the **Mahjong dataset by jon-chan-gnsoa** on Roboflow Universe
 **Before you start:** *Runtime → Change runtime type → T4 GPU → Save.*
 
 Then run each cell in order with the ▶ button (or *Runtime → Run all*). Training takes about
-2–4 hours. Everything important is saved to your Google Drive, in a **TileScan** folder, so if Colab
-disconnects you can run the cells again and training carries on where it stopped.
+2–4 hours. Results are saved in a **TileScan** folder on your Google Drive (it writes only there, and deletes
+nothing), so if Colab disconnects you can run the cells again and training carries on where it
+stopped. To keep your Drive out of it, set `USE_DRIVE = False` in step 1.
 """
 )
 
@@ -47,9 +48,14 @@ EPOCHS = 60   # Passes over all the photos. 60 takes about 2-4 hours on a free T
 BATCH = 32    # Photos per training step. Lower to 16 if you see "CUDA out of memory".
 DATASET = ('jon-chan-gnsoa', 'mahjong-baq4s', 83)  # Roboflow workspace, project, version
 
+# Google Drive keeps the results and lets training carry on after a disconnect. The notebook only
+# writes inside a "TileScan" folder there, and deletes nothing. Set this to False to keep everything
+# in Colab instead: nothing touches your Drive, but a disconnect means starting training again.
+USE_DRIVE = True
+
 WORK = '/content'                          # Colab's scratch space (wiped when Colab disconnects)
 DATA = f'{WORK}/roboflow'                  # Where the dataset is unpacked
-OUT = '/content/drive/MyDrive/TileScan'    # Kept on your Google Drive
+OUT = '/content/drive/MyDrive/TileScan' if USE_DRIVE else f'{WORK}/TileScan'
 
 import os
 # Newer PyTorch refuses some older checkpoint files unless told they're trusted. YOLOX's are.
@@ -64,15 +70,28 @@ assert len(CLASSES) == 42
 """
 )
 
-md("## 2. Check the GPU and connect Google Drive\nIf this says there's no GPU, change the runtime type (see the top) and run it again.\nWhen asked, allow access to your Google Drive.")
+md(
+    """
+## 2. Check the GPU and connect Google Drive
+If this says there's no GPU, change the runtime type (see the top) and run it again.
+
+With `USE_DRIVE = True`, Google asks you to allow access to your Drive (it may call it "Google Drive
+for desktop": that's how Colab connects). The access lasts while this Colab session runs. To remove
+it afterwards: Google Account → Security → Your connections to third-party apps & services.
+"""
+)
 code(
     """
-import subprocess
-gpu = subprocess.run(['nvidia-smi', '-L'], capture_output=True, text=True).stdout.strip()
-print(gpu or 'No GPU! Runtime > Change runtime type > T4 GPU, then run this cell again.')
+import shutil, subprocess
+if shutil.which('nvidia-smi'):
+    print(subprocess.run(['nvidia-smi', '-L'], capture_output=True, text=True).stdout.strip())
+else:
+    print('No GPU. Training (step 7) and scoring (step 8) need one: Runtime > Change runtime type > T4 GPU,'
+          ' then run from step 1 again. Exporting and checking (steps 9 to 11) work without one.')
 
-from google.colab import drive
-drive.mount('/content/drive')
+if USE_DRIVE:
+    from google.colab import drive
+    drive.mount('/content/drive')
 os.makedirs(OUT, exist_ok=True)
 print('Saving to', OUT)
 """
@@ -186,6 +205,7 @@ class Exp(BaseExp):
         self.warmup_epochs = 3
         self.no_aug_epochs = {min(10, max(1, EPOCHS // 4))}
         self.eval_interval = 5
+        self.save_history_ckpt = False   # Keep only the latest and best (each is about 40 MB)
         self.data_num_workers = 2
         self.output_dir = {OUT!r}
         self.exp_name = 'tilescan_yolox_tiny'
@@ -218,8 +238,8 @@ md(
 About 2–4 hours. It prints progress as it goes, and checks itself on the valid photos every 5 epochs
 (look for **AP50**: the share of tiles found and named correctly, out of 1.00).
 
-If Colab disconnects, reconnect, run cells 1 to 6 again, then this one: it carries on from the last
-saved epoch.
+If Colab disconnects, reconnect, run cells 1 to 6 again, then this one: with `USE_DRIVE = True` it
+carries on from the last saved epoch (without Drive, it starts again).
 """
 )
 code(
@@ -280,8 +300,9 @@ code(EXPORT)
 md(
     """
 ## 10. Check it like TileScan would
-Runs the exported model on the test photos the way the app will, and counts tiles found, named
-correctly, missed, and found where there wasn't one. Shows a few photos with what it read.
+Runs the exported model on up to 300 test photos the way the app will, and counts tiles found,
+named correctly, missed, and found where there wasn't one. Shows a few photos with what it read.
+Takes a minute or two with a GPU runtime, longer without (the progress bar shows how far it's got).
 """
 )
 CHECK = """
@@ -313,14 +334,16 @@ def iou(a, b):
     inter = max(0, x2 - x1) * max(0, y2 - y1)
     return inter / (a[2] * a[3] + b[2] * b[3] - inter + 1e-9)
 
-def check(split='test', limit=None):
+def check(split='test', limit=300):
+    \"\"\"Up to `limit` photos (None for all): a few hundred give a reliable picture.\"\"\"
+    from tqdm.auto import tqdm
     coco = json.load(open(f'{DATA}/annotations/{split}.json'))
     truth = collections.defaultdict(list)
     for a in coco['annotations']:
         truth[a['image_id']].append((CLASSES[a['category_id'] - 1], a['bbox']))
     right = wrong = missed = extra = 0
     mixups = collections.Counter()
-    for im in coco['images'][:limit]:
+    for im in tqdm(coco['images'][:limit], desc=f'Reading {split} photos'):
         found = read_tiles(f'{DATA}/{split}/{im["file_name"]}')
         unmatched = list(found)
         for label, box in truth[im['id']]:
@@ -336,7 +359,7 @@ def check(split='test', limit=None):
                 mixups[f'{label} read as {match[0]}'] += 1
         extra += len(unmatched)
     total = right + wrong + missed
-    print(f'{split}: {total} tiles. Named right {right / max(total, 1):.1%}, named wrong {wrong / max(total, 1):.1%}, '
+    print(f'{split}: {min(limit or 10**9, len(coco["images"]))} photos, {total} tiles. Named right {right / max(total, 1):.1%}, named wrong {wrong / max(total, 1):.1%}, '
           f'missed {missed / max(total, 1):.1%}. Extra (no tile there): {extra}.')
     if mixups:
         print('Most common mix-ups:', ', '.join(f'{k} ({v})' for k, v in mixups.most_common(8)))
